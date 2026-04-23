@@ -1,5 +1,6 @@
 #include "common.h"
 #include "arg.h"
+#include "fit.h"
 #include "base64.hpp"
 #include "console.h"
 
@@ -976,7 +977,7 @@ int main(int argc, char ** argv) {
     inference_thread.join();
 
     common_log_set_verbosity_thold(LOG_LEVEL_INFO);
-    llama_memory_breakdown_print(ctx_server.get_llama_context());
+    common_memory_breakdown_print(ctx_server.get_llama_context());
 
     return 0;
 }
