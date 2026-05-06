@@ -26,6 +26,10 @@
 #else
 #include <climits>
 #include <sys/ioctl.h>
+#if !defined(__EMSCRIPTEN__)
+#include <sys/select.h>
+#include <sys/time.h>
+#endif
 #include <unistd.h>
 #include <wchar.h>
 #include <stdio.h>
@@ -885,7 +889,7 @@ namespace console {
         size_t byte_pos = 0; // current byte index
         size_t char_pos = 0; // current character index (one char can be multiple bytes)
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
         // Initialize cursor column tracking for wrap-aware movement.
         // Query actual cursor column via ESC[6n (safe here — no user input yet).
         cursor_col = 0;

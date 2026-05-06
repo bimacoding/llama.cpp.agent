@@ -8,11 +8,19 @@
 
 static constexpr size_t MAX_CLIPBOARD_BYTES = 50 * 1024 * 1024;  // 50 MB
 
+#if defined(_WIN32)
+#define LLAMA_POPEN  _popen
+#define LLAMA_PCLOSE _pclose
+#else
+#define LLAMA_POPEN  popen
+#define LLAMA_PCLOSE pclose
+#endif
+
 // Read all output from a popen command into a byte vector.
 // Returns empty vector on failure.
 static std::vector<uint8_t> popen_read(const char * cmd, size_t max_bytes = MAX_CLIPBOARD_BYTES) {
     std::vector<uint8_t> result;
-    FILE * fp = popen(cmd, "r");
+    FILE * fp = LLAMA_POPEN(cmd, "r");
     if (!fp) {
         return result;
     }
@@ -23,12 +31,12 @@ static std::vector<uint8_t> popen_read(const char * cmd, size_t max_bytes = MAX_
         if (n > 0) {
             result.insert(result.end(), buf, buf + n);
             if (result.size() > max_bytes) {
-                pclose(fp);
+                LLAMA_PCLOSE(fp);
                 return {};
             }
         }
     }
-    pclose(fp);
+    LLAMA_PCLOSE(fp);
     return result;
 }
 
