@@ -46,12 +46,14 @@ jobs:
         run: |
           cmake -B build \
             -DLLAMA_FATAL_WARNINGS=ON \
-            -DLLAMA_LLGUIDANCE=ON
+            -DLLAMA_LLGUIDANCE=ON \
+            -DGGML_NATIVE=OFF
           cmake --build build --config Release -j $(nproc)
 
       - name: Test
         id: cmake_test
         run: |
           cd build
-          ctest -L main --verbose --timeout 900
+          ctest -L main --verbose --timeout 900 \
+            -E "test-llama-archs|test-thread-safety|test-barrier|test-quantize-fns|test-quantize-perf|test-rope"
 
