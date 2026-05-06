@@ -151,7 +151,8 @@ if (LLAMA_LLGUIDANCE)
         SOURCE_DIR ${LLGUIDANCE_SRC}
         BUILD_IN_SOURCE TRUE
         CONFIGURE_COMMAND ""
-        BUILD_COMMAND cargo build --release --package llguidance
+        # Pin output path so external env vars (e.g. CARGO_TARGET_DIR) can't break include/library lookup.
+        BUILD_COMMAND ${CMAKE_COMMAND} -E env CARGO_TARGET_DIR=${LLGUIDANCE_SRC}/target cargo build --release --package llguidance
         INSTALL_COMMAND ""
         BUILD_BYPRODUCTS ${LLGUIDANCE_PATH}/${LLGUIDANCE_LIB_NAME} ${LLGUIDANCE_PATH}/llguidance.h
         UPDATE_COMMAND ""
@@ -161,6 +162,8 @@ if (LLAMA_LLGUIDANCE)
     add_library(llguidance STATIC IMPORTED)
     set_target_properties(llguidance PROPERTIES IMPORTED_LOCATION ${LLGUIDANCE_PATH}/${LLGUIDANCE_LIB_NAME})
     add_dependencies(llguidance llguidance_ext)
+    # Ensure generated header (llguidance.h) exists before compiling llama-common.
+    add_dependencies(${TARGET} llguidance_ext)
 
     target_include_directories(${TARGET} PRIVATE ${LLGUIDANCE_PATH})
     target_link_libraries(${TARGET} PRIVATE llguidance)

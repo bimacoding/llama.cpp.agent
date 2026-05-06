@@ -6,13 +6,22 @@
 #include <filesystem>
 #include <functional>
 
+namespace {
+tool_result make_error_tool_result(std::string error_message) {
+    tool_result result;
+    result.success = false;
+    result.error = std::move(error_message);
+    return result;
+}
+} // namespace
+
 tool_result agent_loop::execute_tool_call(const common_chat_tool_call & call) {
     auto & registry = tool_registry::instance();
 
     // Check if tool exists
     const tool_def * tool = registry.get_tool(call.name);
     if (!tool) {
-        return {false, "", "Unknown tool: " + call.name};
+        return make_error_tool_result("Unknown tool: " + call.name);
     }
 
     // Parse arguments
@@ -20,7 +29,7 @@ tool_result agent_loop::execute_tool_call(const common_chat_tool_call & call) {
     try {
         args = json::parse(call.arguments);
     } catch (const json::parse_error & e) {
-        return {false, "", std::string("Invalid JSON arguments: ") + e.what()};
+        return make_error_tool_result(std::string("Invalid JSON arguments: ") + e.what());
     }
 
     // Determine permission type
@@ -56,7 +65,7 @@ tool_result agent_loop::execute_tool_call(const common_chat_tool_call & call) {
                 auto response = permission_mgr_.prompt_user(ext_req);
                 if (response == permission_response::DENY_ONCE ||
                     response == permission_response::DENY_ALWAYS) {
-                    return {false, "", "Blocked: File is outside working directory"};
+                    return make_error_tool_result("Blocked: File is outside working directory");
                 }
             }
         }
@@ -83,21 +92,21 @@ tool_result agent_loop::execute_tool_call(const common_chat_tool_call & call) {
         auto response = permission_mgr_.prompt_user(req);
         if (response == permission_response::DENY_ONCE ||
             response == permission_response::DENY_ALWAYS) {
-            return {false, "", "Blocked: Detected repeated identical tool calls"};
+            return make_error_tool_result("Blocked: Detected repeated identical tool calls");
         }
     }
 
     // Check permission
     permission_state state = permission_mgr_.check_permission(req);
     if (state == permission_state::DENY || state == permission_state::DENY_SESSION) {
-        return {false, "", "Permission denied for " + call.name};
+        return make_error_tool_result("Permission denied for " + call.name);
     }
 
     if (state == permission_state::ASK) {
         auto response = permission_mgr_.prompt_user(req);
         if (response == permission_response::DENY_ONCE ||
             response == permission_response::DENY_ALWAYS) {
-            return {false, "", "User denied permission for " + call.name};
+            return make_error_tool_result("User denied permission for " + call.name);
         }
     }
 
@@ -184,7 +193,7 @@ tool_result agent_loop::execute_tool_call_async(
     // Check if tool exists
     const tool_def * tool = registry.get_tool(call.name);
     if (!tool) {
-        return {false, "", "Unknown tool: " + call.name};
+        return make_error_tool_result("Unknown tool: " + call.name);
     }
 
     // Parse arguments
@@ -192,7 +201,7 @@ tool_result agent_loop::execute_tool_call_async(
     try {
         args = json::parse(call.arguments);
     } catch (const json::parse_error & e) {
-        return {false, "", std::string("Invalid JSON arguments: ") + e.what()};
+        return make_error_tool_result(std::string("Invalid JSON arguments: ") + e.what());
     }
 
     // Determine permission type
@@ -237,11 +246,11 @@ tool_result agent_loop::execute_tool_call_async(
                 auto response = async_perms.wait_for_response_or_stop(req_id, 300000, should_stop);
                 if (should_stop()) {
                     on_event(agent_event::permission_resolved(req_id, false));
-                    return {false, "", "Operation cancelled"};
+                    return make_error_tool_result("Operation cancelled");
                 }
                 if (!response || !response->allowed) {
                     on_event(agent_event::permission_resolved(req_id, false));
-                    return {false, "", "Blocked: File is outside working directory"};
+                    return make_error_tool_result("Blocked: File is outside working directory");
                 }
                 on_event(agent_event::permission_resolved(req_id, true));
             }
@@ -272,11 +281,11 @@ tool_result agent_loop::execute_tool_call_async(
         auto response = async_perms.wait_for_response_or_stop(req_id, 300000, should_stop);
         if (should_stop()) {
             on_event(agent_event::permission_resolved(req_id, false));
-            return {false, "", "Operation cancelled"};
+            return make_error_tool_result("Operation cancelled");
         }
         if (!response || !response->allowed) {
             on_event(agent_event::permission_resolved(req_id, false));
-            return {false, "", "Blocked: Detected repeated identical tool calls"};
+            return make_error_tool_result("Blocked: Detected repeated identical tool calls");
         }
         on_event(agent_event::permission_resolved(req_id, true));
     }
@@ -284,7 +293,7 @@ tool_result agent_loop::execute_tool_call_async(
     // Check permission
     permission_state state = async_perms.check_permission(req);
     if (state == permission_state::DENY || state == permission_state::DENY_SESSION) {
-        return {false, "", "Permission denied for " + call.name};
+        return make_error_tool_result("Permission denied for " + call.name);
     }
 
     if (state == permission_state::ASK) {
@@ -297,18 +306,18 @@ tool_result agent_loop::execute_tool_call_async(
 
         if (should_stop()) {
             on_event(agent_event::permission_resolved(req_id, false));
-            return {false, "", "Operation cancelled"};
+            return make_error_tool_result("Operation cancelled");
         }
 
         if (!response) {
             on_event(agent_event::permission_resolved(req_id, false));
-            return {false, "", "Permission request timed out"};
+            return make_error_tool_result("Permission request timed out");
         }
 
         on_event(agent_event::permission_resolved(req_id, response->allowed));
 
         if (!response->allowed) {
-            return {false, "", "User denied permission for " + call.name};
+            return make_error_tool_result("User denied permission for " + call.name);
         }
     }
 

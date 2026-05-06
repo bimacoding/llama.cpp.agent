@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 using json = nlohmann::ordered_json;
@@ -27,6 +28,10 @@ struct tool_result {
     json content;  // structured content array (text + image blocks); overrides output when non-empty
     std::vector<uint8_t> image_bytes;  // raw image data for terminal preview
     std::string image_mime;            // e.g. "image/jpeg"
+
+    tool_result() = default;
+    tool_result(bool success_value, std::string output_value, std::string error_value)
+        : success(success_value), output(std::move(output_value)), error(std::move(error_value)) {}
 };
 
 // Tool definition
