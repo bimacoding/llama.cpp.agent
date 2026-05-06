@@ -429,11 +429,35 @@ jobs:
         id: pack_artifacts
         run: |
           $archDir = "${{ matrix.arch }}"
-          $dllName = "libomp140.${{ matrix.arch == 'x64' && 'x86_64' || 'aarch64' }}.dll"
-          $pattern = "$env:ProgramFiles\Microsoft Visual Studio\2022\*\VC\Redist\MSVC\*\debug_nonredist\$archDir\Microsoft.VC143.OpenMP.LLVM\$dllName"
-          $dll = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+          $dllCandidates = if ("${{ matrix.arch }}" -eq "x64") {
+            @("libomp140.x86_64.dll", "libomp140.dll")
+          } else {
+            @("libomp140.aarch64.dll", "libomp140.arm64.dll", "libomp140.dll")
+          }
+          $roots = @(
+            "$env:ProgramFiles\Microsoft Visual Studio\2022",
+            "$env:ProgramFiles(x86)\Microsoft Visual Studio\2022"
+          ) | Where-Object { $_ -and (Test-Path $_) }
+          $dll = $null
+          foreach ($root in $roots) {
+            foreach ($dllName in $dllCandidates) {
+              $patterns = @(
+                "$root\*\VC\Redist\MSVC\*\debug_nonredist\$archDir\Microsoft.VC143.OpenMP.LLVM\$dllName",
+                "$root\*\VC\Redist\MSVC\*\$archDir\Microsoft.VC143.OpenMP.LLVM\$dllName"
+              )
+              foreach ($pattern in $patterns) {
+                $candidate = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
+                if ($candidate) {
+                  $dll = $candidate
+                  break
+                }
+              }
+              if ($dll) { break }
+            }
+            if ($dll) { break }
+          }
           if (-not $dll) {
-            throw "$dllName not found under Visual Studio redist path."
+            throw "OpenMP runtime DLL not found. Tried names: $($dllCandidates -join ', ') under Visual Studio redist paths."
           }
           Copy-Item $dll.FullName .\build\bin\Release\
           7z a -snl llama-bin-win-cpu-${{ matrix.arch }}.zip .\build\bin\Release\*
