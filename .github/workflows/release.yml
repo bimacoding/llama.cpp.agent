@@ -434,30 +434,78 @@ jobs:
           } else {
             @("libomp140.aarch64.dll", "libomp140.arm64.dll", "libomp140.dll")
           }
+          # Folder casing differs across VS / runner images (arm64 vs ARM64).
+          $archDirs = if ("${{ matrix.arch }}" -eq "x64") {
+            @("x64", "X64")
+          } else {
+            @("arm64", "ARM64", "Arm64")
+          }
           $roots = @(
             "$env:ProgramFiles\Microsoft Visual Studio\2022",
             "$env:ProgramFiles(x86)\Microsoft Visual Studio\2022"
           ) | Where-Object { $_ -and (Test-Path $_) }
+
           $dll = $null
+
           foreach ($root in $roots) {
-            foreach ($dllName in $dllCandidates) {
-              $patterns = @(
-                "$root\*\VC\Redist\MSVC\*\debug_nonredist\$archDir\Microsoft.VC143.OpenMP.LLVM\$dllName",
-                "$root\*\VC\Redist\MSVC\*\$archDir\Microsoft.VC143.OpenMP.LLVM\$dllName"
-              )
-              foreach ($pattern in $patterns) {
-                $candidate = Get-ChildItem -Path $pattern -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
-                if ($candidate) {
-                  $dll = $candidate
-                  break
+            foreach ($edition in Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue) {
+              $redistMvc = Join-Path $edition.FullName "VC\Redist\MSVC"
+              if (-not (Test-Path $redistMvc)) { continue }
+              foreach ($verDir in Get-ChildItem -Path $redistMvc -Directory -ErrorAction SilentlyContinue) {
+                foreach ($rel in @("debug_nonredist", "")) {
+                  foreach ($ad in $archDirs) {
+                    $base = if ($rel) {
+                      Join-Path $verDir.FullName (Join-Path $rel $ad)
+                    } else {
+                      Join-Path $verDir.FullName $ad
+                    }
+                    if (-not (Test-Path $base)) { continue }
+                    foreach ($omp in Get-ChildItem -Path $base -Directory -Filter "Microsoft.VC*.OpenMP.LLVM" -ErrorAction SilentlyContinue) {
+                      foreach ($dllName in $dllCandidates) {
+                        $candidatePath = Join-Path $omp.FullName $dllName
+                        if (Test-Path $candidatePath) {
+                          $dll = Get-Item -LiteralPath $candidatePath
+                          break
+                        }
+                      }
+                      if ($dll) { break }
+                    }
+                    if ($dll) { break }
+                  }
+                  if ($dll) { break }
                 }
+                if ($dll) { break }
               }
               if ($dll) { break }
             }
             if ($dll) { break }
           }
+
+          # Fallback: bounded recursive search under VC\Redist\MSVC only (VC toolset / folder layout drift).
           if (-not $dll) {
-            throw "OpenMP runtime DLL not found. Tried names: $($dllCandidates -join ', ') under Visual Studio redist paths."
+            foreach ($root in $roots) {
+              foreach ($edition in Get-ChildItem -Path $root -Directory -ErrorAction SilentlyContinue) {
+                $redistMvc = Join-Path $edition.FullName "VC\Redist\MSVC"
+                if (-not (Test-Path $redistMvc)) { continue }
+                $dll = Get-ChildItem -Path $redistMvc -Recurse -Filter "libomp140*.dll" -ErrorAction SilentlyContinue |
+                  Where-Object {
+                    $dir = $_.DirectoryName
+                    if ("${{ matrix.arch }}" -eq "x64") {
+                      $dir -match '\\[xX]64\\' -and $dir -match 'OpenMP\.LLVM'
+                    } else {
+                      $dir -match '\\(arm64|ARM64|Arm64)\\' -and $dir -match 'OpenMP\.LLVM'
+                    }
+                  } |
+                  Sort-Object FullName -Descending |
+                  Select-Object -First 1
+                if ($dll) { break }
+              }
+              if ($dll) { break }
+            }
+          }
+
+          if (-not $dll) {
+            throw "OpenMP runtime DLL not found. Tried names: $($dllCandidates -join ', ') under Visual Studio Redist (structured + recursive MSVC scan)."
           }
           Copy-Item $dll.FullName .\build\bin\Release\
           7z a -snl llama-bin-win-cpu-${{ matrix.arch }}.zip .\build\bin\Release\*
